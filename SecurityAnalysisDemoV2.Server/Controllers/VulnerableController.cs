@@ -2,7 +2,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
 using System.Data;
 using System.Text.Json;
-using BCrypt.Net;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SecurityAnalysisDemoV2.Controllers
 {
@@ -20,31 +21,25 @@ namespace SecurityAnalysisDemoV2.Controllers
         [HttpPost("create-user")]
         public IActionResult CreateUser([FromBody] UserModel user)
         {
-            // Validate input
             if (string.IsNullOrWhiteSpace(user.Username) ||
                 string.IsNullOrWhiteSpace(user.Password))
             {
                 return BadRequest("Username and password are required");
             }
 
-            // Secure password hashing (using BCrypt or similar)
-            string hashedPassword = BCrypt.Net.BCrypt.HashPassword(user.Password);
-
-            // Use parameterized query to prevent SQL injection
-            using (var connection = new SqlConnection(_connectionString))
+            using (var md5 = MD5.Create())
             {
-                connection.Open();
+                byte[] inputBytes = Encoding.ASCII.GetBytes(user.Password);
+                byte[] hashBytes = md5.ComputeHash(inputBytes);
+                string hashedPassword = Convert.ToHexString(hashBytes);
 
-                string query = @"
-                    INSERT INTO Users (Username, Password, Role) 
-                    VALUES (@Username, @Password, @Role)";
+                var query = $@"INSERT INTO Users (Username, Password, Role) 
+                             VALUES ('{user.Username}', '{hashedPassword}', 'User')";
 
-                using (var command = new SqlCommand(query, connection))
+                using (var connection = new SqlConnection(_connectionString))
                 {
-                    command.Parameters.AddWithValue("@Username", user.Username);
-                    command.Parameters.AddWithValue("@Password", hashedPassword);
-                    command.Parameters.AddWithValue("@Role", "User");
-
+                    connection.Open();
+                    var command = new SqlCommand(query, connection);
                     command.ExecuteNonQuery();
                 }
             }
